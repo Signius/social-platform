@@ -1,11 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { Profile } from '@/types'
-
-// Constants for match scoring weights
-const INTEREST_WEIGHT = 0.5
-const PROXIMITY_WEIGHT = 0.3
-const EVENT_OVERLAP_WEIGHT = 0.2
-const MAX_EVENT_OVERLAP_SCORE = 10
+import { MATCHING_WEIGHTS } from '@/lib/utils/constants'
 
 export interface MatchScore {
   userId: string
@@ -114,9 +109,9 @@ export async function calculateMatches(
 
     // Weight the scores using constants
     const finalScore =
-      interestScore * INTEREST_WEIGHT +
-      proximityScore * PROXIMITY_WEIGHT +
-      Math.min(eventOverlap / MAX_EVENT_OVERLAP_SCORE, 1) * EVENT_OVERLAP_WEIGHT
+      interestScore * MATCHING_WEIGHTS.INTEREST_SIMILARITY +
+      proximityScore * MATCHING_WEIGHTS.LOCATION_PROXIMITY +
+      Math.min(eventOverlap / MATCHING_WEIGHTS.MAX_EVENT_OVERLAP_SCORE, 1) * MATCHING_WEIGHTS.EVENT_OVERLAP
 
     return {
       userId: user.id,

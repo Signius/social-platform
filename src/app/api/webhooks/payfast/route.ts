@@ -2,8 +2,75 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { verifyPayFastSignature } from '@/lib/payfast/client'
 
+// Simple in-memory rate limiting (for production, use Redis or similar)
+const requestCounts = new Map<string, { count: number; resetTime: number }>()
+const RATE_LIMIT_WINDOW = 60 * 1000 // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 10 // Max 10 requests per minute per IP
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now()
+  const record = requestCounts.get(ip)
+
+  if (!record || now > record.resetTime) {
+    // New window
+    requestCounts.set(ip, { count: 1, resetTime: now + RATE_LIMIT_WINDOW })
+    return true
+  }
+
+  if (record.count >= MAX_REQUESTS_PER_WINDOW) {
+    return false
+  }
+
+  record.count++
+  return true
+}
+
+// Clean up old entries periodically
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, record] of requestCounts.entries()) {
+    if (now > record.resetTime) {
+      requestCounts.delete(ip)
+    }
+  }
+}, RATE_LIMIT_WINDOW)
+
 export async function POST(request: NextRequest) {
   try {
+    // Rate limiting
+    const ip = request.headers.get('x-forwarded-for') || 
+               request.headers.get('x-real-ip') || 
+               'unknown'
+    
+    if (!checkRateLimit(ip)) {
+      console.warn(`Rate limit exceeded for IP: ${ip}`)
+      return NextResponse.json(
+        { error: 'Too many requests' },
+        { status: 429 }
+      )
+    }
+
+    // Verify request is from PayFast (optional: add IP whitelist)
+    const payfastIPs = [
+      '197.97.145.144',
+      '41.74.179.194',
+      '41.74.179.195',
+      '41.74.179.196',
+      '41.74.179.197',
+      '197.97.145.145',
+    ]
+    
+    const requestIP = request.headers.get('x-forwarded-for')?.split(',')[0].trim()
+    
+    // Only enforce IP whitelist in production
+    if (process.env.NODE_ENV === 'production' && requestIP && !payfastIPs.includes(requestIP)) {
+      console.warn(`Webhook request from unauthorized IP: ${requestIP}`)
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 403 }
+      )
+    }
+
     // Parse form data from PayFast
     const formData = await request.formData()
     const data: Record<string, string> = {}

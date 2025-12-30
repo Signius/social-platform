@@ -55,3 +55,78 @@ export const GROUP_CATEGORIES = [
 export const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME || 'EventConnect'
 export const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
+// Matching algorithm weights
+export const MATCHING_WEIGHTS = {
+  INTEREST_SIMILARITY: 0.5,
+  LOCATION_PROXIMITY: 0.3,
+  EVENT_OVERLAP: 0.2,
+  MAX_EVENT_OVERLAP_SCORE: 10,
+} as const
+
+// File upload limits
+export const FILE_UPLOAD = {
+  MAX_AVATAR_SIZE: 5 * 1024 * 1024, // 5MB
+  MAX_GROUP_COVER_SIZE: 10 * 1024 * 1024, // 10MB
+  ALLOWED_IMAGE_TYPES: ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'],
+  ALLOWED_IMAGE_EXTENSIONS: ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+} as const
+
+// Profile limits
+export const PROFILE_LIMITS = {
+  MAX_INTERESTS: 10,
+  MAX_BIO_LENGTH: 500,
+  MAX_USERNAME_LENGTH: 20,
+  MIN_USERNAME_LENGTH: 3,
+  MAX_LOCATION_LENGTH: 100,
+} as const
+
+// Event limits
+export const EVENT_LIMITS = {
+  MIN_TITLE_LENGTH: 3,
+  MAX_TITLE_LENGTH: 200,
+  MAX_DESCRIPTION_LENGTH: 2000,
+  MAX_LOCATION_LENGTH: 300,
+} as const
+
+// Group limits
+export const GROUP_LIMITS = {
+  MIN_NAME_LENGTH: 3,
+  MAX_NAME_LENGTH: 100,
+  MAX_DESCRIPTION_LENGTH: 1000,
+} as const
+
+// Connection statuses
+export const CONNECTION_STATUS = {
+  PENDING: 'pending',
+  ACCEPTED: 'accepted',
+  REJECTED: 'rejected',
+} as const
+
+// Event statuses
+export const EVENT_STATUS = {
+  UPCOMING: 'upcoming',
+  COMPLETED: 'completed',
+  CANCELLED: 'cancelled',
+} as const
+
+// RSVP statuses
+export const RSVP_STATUS = {
+  GOING: 'going',
+  INTERESTED: 'interested',
+  NOT_GOING: 'not_going',
+} as const
+
+// Group privacy levels
+export const GROUP_PRIVACY = {
+  PUBLIC: 'public',
+  PRIVATE: 'private',
+  INVITE_ONLY: 'invite_only',
+} as const
+
+// Group roles
+export const GROUP_ROLES = {
+  ADMIN: 'admin',
+  MODERATOR: 'moderator',
+  MEMBER: 'member',
+} as const
+
