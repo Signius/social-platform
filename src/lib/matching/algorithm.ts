@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { Profile } from '@/types'
 import { MATCHING_WEIGHTS } from '@/lib/utils/constants'
+import type { Database } from '@/types/database'
 
 export interface MatchScore {
   userId: string
@@ -18,22 +19,26 @@ export async function calculateMatches(
   const supabase = await createClient()
 
   // Get current user's profile
-  const { data: currentUser, error: userError } = await supabase
+  const { data: currentUserData, error: userError } = await (supabase as any)
     .from('profiles')
     .select('*')
     .eq('id', currentUserId)
     .single()
+  
+  const currentUser = currentUserData as Database['public']['Tables']['profiles']['Row'] | null
 
   if (userError || !currentUser) {
     throw new Error('User not found')
   }
 
   // Get existing connections to exclude (fixed SQL injection risk)
-  const { data: existingConnections } = await supabase
+  const { data: existingConnectionsData } = await (supabase as any)
     .from('connections')
     .select('requester_id, receiver_id')
     .or(`requester_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`)
     .eq('status', 'accepted')
+  
+  const existingConnections = existingConnectionsData as Pick<Database['public']['Tables']['connections']['Row'], 'requester_id' | 'receiver_id'>[] | null
 
   const connectedUserIds = new Set(
     existingConnections?.flatMap((c) => [c.requester_id, c.receiver_id]) || []
@@ -48,9 +53,11 @@ export async function calculateMatches(
     .not('id', 'in', `(${connectedUserIdsArray.map(() => '?').join(',')})`)
 
   // If the above doesn't work with Supabase, use filter method instead
-  const { data: allProfiles } = await supabase
+  const { data: allProfilesData } = await (supabase as any)
     .from('profiles')
     .select('*')
+  
+  const allProfiles = allProfilesData as Database['public']['Tables']['profiles']['Row'][] | null
 
   if (!allProfiles) {
     return []
@@ -69,10 +76,12 @@ export async function calculateMatches(
   const allUserIds = filteredMatches.map((u) => u.id)
   allUserIds.push(currentUserId)
 
-  const { data: allEventAttendances } = await supabase
+  const { data: allEventAttendancesData } = await (supabase as any)
     .from('event_attendees')
     .select('user_id, event_id')
     .in('user_id', allUserIds)
+  
+  const allEventAttendances = allEventAttendancesData as Pick<Database['public']['Tables']['event_attendees']['Row'], 'user_id' | 'event_id'>[] | null
 
   // Build a map of user_id -> Set of event_ids for O(1) lookup
   const eventsByUser = new Map<string, Set<string>>()

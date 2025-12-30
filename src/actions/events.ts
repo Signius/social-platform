@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createEventSchema } from '@/lib/validations/event'
 import { ZodError } from 'zod'
+import type { Database } from '@/types/database'
 
 export async function createEvent(groupId: string, formData: FormData) {
   try {
@@ -28,7 +29,7 @@ export async function createEvent(groupId: string, formData: FormData) {
     }
 
     // Check subscription limits
-    const { data: canCreate, error: limitError } = await supabase
+    const { data: canCreate, error: limitError } = await (supabase as any)
       .rpc('check_subscription_limit', {
         p_user_id: user.id,
         p_limit_type: 'events'
@@ -69,16 +70,22 @@ export async function createEvent(groupId: string, formData: FormData) {
       }
     }
 
-    const { data, error } = await supabase
+    const insertData: Database['public']['Tables']['events']['Insert'] = {
+      title: validatedData.title,
+      description: validatedData.description || null,
+      location: validatedData.location || null,
+      group_id: groupId,
+      created_by: user.id,
+      start_time: validatedData.startTime,
+      end_time: validatedData.endTime || null,
+      capacity: validatedData.capacity || null,
+      difficulty_level: validatedData.difficultyLevel || null,
+      status: 'upcoming',
+    }
+
+    const { data, error } = await (supabase as any)
       .from('events')
-      .insert({
-        ...validatedData,
-        group_id: groupId,
-        created_by: user.id,
-        start_time: validatedData.startTime,
-        end_time: validatedData.endTime,
-        difficulty_level: validatedData.difficultyLevel,
-      })
+      .insert(insertData)
       .select()
       .single()
 
@@ -110,11 +117,13 @@ export async function rsvpEvent(eventId: string, status: 'going' | 'interested' 
     }
 
     // Get event details and check capacity
-    const { data: event } = await supabase
+    const { data: eventData } = await (supabase as any)
       .from('events')
       .select('capacity, group_id, start_time, status')
       .eq('id', eventId)
       .single()
+    
+    const event = eventData as Pick<Database['public']['Tables']['events']['Row'], 'capacity' | 'group_id' | 'start_time' | 'status'> | null
 
     if (!event) {
       return { error: 'Event not found' }
@@ -143,7 +152,7 @@ export async function rsvpEvent(eventId: string, status: 'going' | 'interested' 
 
     // Check capacity if status is 'going'
     if (status === 'going' && event.capacity) {
-      const { count } = await supabase
+      const { count } = await (supabase as any)
         .from('event_attendees')
         .select('*', { count: 'exact', head: true })
         .eq('event_id', eventId)
@@ -151,12 +160,14 @@ export async function rsvpEvent(eventId: string, status: 'going' | 'interested' 
 
       if (count && count >= event.capacity) {
         // Check if user already has RSVP
-        const { data: existingRsvp } = await supabase
+        const { data: existingRsvpData } = await (supabase as any)
           .from('event_attendees')
           .select('rsvp_status')
           .eq('event_id', eventId)
           .eq('user_id', user.id)
           .single()
+        
+        const existingRsvp = existingRsvpData as Pick<Database['public']['Tables']['event_attendees']['Row'], 'rsvp_status'> | null
 
         if (!existingRsvp || existingRsvp.rsvp_status !== 'going') {
           return { error: 'This event is at full capacity' }
@@ -164,13 +175,15 @@ export async function rsvpEvent(eventId: string, status: 'going' | 'interested' 
       }
     }
 
-    const { error } = await supabase
+    const upsertData: Database['public']['Tables']['event_attendees']['Insert'] = {
+      event_id: eventId,
+      user_id: user.id,
+      rsvp_status: status,
+    }
+
+    const { error } = await (supabase as any)
       .from('event_attendees')
-      .upsert({
-        event_id: eventId,
-        user_id: user.id,
-        rsvp_status: status,
-      })
+      .upsert(upsertData)
 
     if (error) {
       return { error: error.message }

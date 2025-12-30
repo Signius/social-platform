@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { formatRelativeTime } from "@/lib/utils/format"
+import type { Database } from "@/types/database"
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -15,11 +16,13 @@ export default async function DashboardPage() {
   }
 
   // Get user's profile
-  const { data: profile } = await supabase
+  const { data: profileData } = await (supabase as any)
     .from('profiles')
     .select('*')
     .eq('id', user.id)
     .single()
+  
+  const profile = profileData as Database['public']['Tables']['profiles']['Row'] | null
 
   // Get groups count
   const { count: groupsCount } = await supabase

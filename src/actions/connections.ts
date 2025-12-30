@@ -3,6 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { logger } from '@/lib/utils/logger'
+import type { Connection } from '@/types'
+import type { Database } from '@/types/database'
 
 type ActionResult = {
   success?: boolean
@@ -39,12 +41,24 @@ export async function sendConnectionRequest(receiverId: string): Promise<ActionR
       return { error: 'User not found' }
     }
 
-    // Check if connection already exists
-    const { data: existing } = await supabase
+    // Check if connection already exists (as requester)
+    const { data: asRequester } = await supabase
       .from('connections')
       .select('*')
-      .or(`and(requester_id.eq.${user.id},receiver_id.eq.${receiverId}),and(requester_id.eq.${receiverId},receiver_id.eq.${user.id})`)
+      .eq('requester_id', user.id)
+      .eq('receiver_id', receiverId)
       .maybeSingle()
+    
+    // Check if connection already exists (as receiver)
+    const { data: asReceiver } = await supabase
+      .from('connections')
+      .select('*')
+      .eq('requester_id', receiverId)
+      .eq('receiver_id', user.id)
+      .maybeSingle()
+    
+    type ConnectionRow = Database['public']['Tables']['connections']['Row']
+    const existing: ConnectionRow | null = (asRequester || asReceiver) as ConnectionRow | null
 
     if (existing) {
       if (existing.status === 'pending') {
@@ -71,13 +85,15 @@ export async function sendConnectionRequest(receiverId: string): Promise<ActionR
       }
     }
 
+    const insertPayload: Database['public']['Tables']['connections']['Insert'] = {
+      requester_id: user.id,
+      receiver_id: receiverId,
+      status: 'pending',
+    }
+    
     const { error } = await supabase
       .from('connections')
-      .insert({
-        requester_id: user.id,
-        receiver_id: receiverId,
-        status: 'pending',
-      })
+      .insert(insertPayload as any)
 
     if (error) {
       console.error('Error sending connection request:', error)
@@ -111,11 +127,13 @@ export async function acceptConnectionRequest(connectionId: string): Promise<Act
     }
 
     // Verify user is the receiver
-    const { data: connection, error: fetchError } = await supabase
+    const { data: connectionData, error: fetchError } = await supabase
       .from('connections')
       .select('*')
       .eq('id', connectionId)
       .single()
+    
+    const connection = connectionData as Database['public']['Tables']['connections']['Row'] | null
 
     if (fetchError || !connection) {
       return { error: 'Connection request not found' }
@@ -133,10 +151,15 @@ export async function acceptConnectionRequest(connectionId: string): Promise<Act
       return { error: 'This connection request was previously rejected' }
     }
 
-    const { error } = await supabase
+    const updatePayload: Database['public']['Tables']['connections']['Update'] = {
+      status: 'accepted',
+    }
+    
+    const result: any = await (supabase as any)
       .from('connections')
-      .update({ status: 'accepted' })
+      .update(updatePayload)
       .eq('id', connectionId)
+    const { error } = result
 
     if (error) {
       console.error('Error accepting connection request:', error)
@@ -169,11 +192,13 @@ export async function rejectConnectionRequest(connectionId: string): Promise<Act
     }
 
     // Verify user is the receiver
-    const { data: connection, error: fetchError } = await supabase
+    const { data: connectionData, error: fetchError } = await supabase
       .from('connections')
       .select('*')
       .eq('id', connectionId)
       .single()
+    
+    const connection = connectionData as Database['public']['Tables']['connections']['Row'] | null
 
     if (fetchError || !connection) {
       return { error: 'Connection request not found' }
@@ -191,10 +216,15 @@ export async function rejectConnectionRequest(connectionId: string): Promise<Act
       return { error: 'Cannot reject an accepted connection. Please remove the connection instead.' }
     }
 
-    const { error } = await supabase
+    const updatePayload: Database['public']['Tables']['connections']['Update'] = {
+      status: 'rejected',
+    }
+    
+    const result: any = await (supabase as any)
       .from('connections')
-      .update({ status: 'rejected' })
+      .update(updatePayload)
       .eq('id', connectionId)
+    const { error } = result
 
     if (error) {
       console.error('Error rejecting connection request:', error)
@@ -225,11 +255,13 @@ export async function removeConnection(connectionId: string): Promise<ActionResu
     }
 
     // Verify user is part of the connection
-    const { data: connection, error: fetchError } = await supabase
+    const { data: connectionData, error: fetchError } = await supabase
       .from('connections')
       .select('*')
       .eq('id', connectionId)
       .single()
+    
+    const connection = connectionData as Database['public']['Tables']['connections']['Row'] | null
 
     if (fetchError || !connection) {
       return { error: 'Connection not found' }

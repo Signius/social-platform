@@ -6,6 +6,7 @@ import { profileSchema } from '@/lib/validations/profile'
 import { ZodError } from 'zod'
 import { PROFILE_LIMITS, FILE_UPLOAD } from '@/lib/utils/constants'
 import { logger } from '@/lib/utils/logger'
+import type { Database } from '@/types/database'
 
 type ActionResult = {
   success?: boolean
@@ -67,15 +68,17 @@ export async function updateProfile(formData: FormData): Promise<ActionResult> {
       return { error: `You can only have up to ${PROFILE_LIMITS.MAX_INTERESTS} interests` }
     }
 
-    const { error } = await supabase
+    const updateData: Database['public']['Tables']['profiles']['Update'] = {
+      username: validatedData.username,
+      full_name: sanitizedFullName,
+      bio: sanitizedBio,
+      location: sanitizedLocation,
+      interests: validatedData.interests || [],
+    }
+
+    const { error } = await (supabase as any)
       .from('profiles')
-      .update({
-        username: validatedData.username,
-        full_name: sanitizedFullName,
-        bio: sanitizedBio,
-        location: sanitizedLocation,
-        interests: validatedData.interests || [],
-      })
+      .update(updateData)
       .eq('id', user.id)
 
     if (error) {
@@ -153,19 +156,21 @@ export async function getProfileByUsername(username: string): Promise<ProfileRes
     // Sanitize username to prevent injection
     const sanitizedUsername = username.trim().toLowerCase()
 
-    const { data, error } = await supabase
+    const { data: profileData, error } = await (supabase as any)
       .from('profiles')
       .select('*')
       .eq('username', sanitizedUsername)
       .single()
+    
+    const data = profileData as Database['public']['Tables']['profiles']['Row'] | null
 
-    if (error) {
+    if (error || !data) {
       console.error('Error fetching profile by username:', error)
       return { error: 'Profile not found' }
     }
 
     // Get user stats
-    const { data: stats, error: statsError } = await supabase.rpc('get_user_stats', {
+    const { data: stats, error: statsError } = await (supabase as any).rpc('get_user_stats', {
       p_user_id: data.id,
     })
 
@@ -219,7 +224,8 @@ export async function updateAvatar(formData: FormData): Promise<AvatarResult> {
     }
 
     // Validate file type
-    if (!FILE_UPLOAD.ALLOWED_IMAGE_TYPES.includes(file.type)) {
+    const allowedTypes = FILE_UPLOAD.ALLOWED_IMAGE_TYPES as readonly string[]
+    if (!allowedTypes.includes(file.type)) {
       return { error: 'File must be a valid image (JPEG, PNG, GIF, or WebP)' }
     }
 
@@ -231,8 +237,9 @@ export async function updateAvatar(formData: FormData): Promise<AvatarResult> {
 
     // Validate file extension matches MIME type
     const fileExt = file.name.split('.').pop()?.toLowerCase()
-    
-    if (!fileExt || !FILE_UPLOAD.ALLOWED_IMAGE_EXTENSIONS.includes(fileExt)) {
+
+    const allowedExtensions = FILE_UPLOAD.ALLOWED_IMAGE_EXTENSIONS as readonly string[]
+    if (!fileExt || !allowedExtensions.includes(fileExt)) {
       return { error: 'Invalid file extension' }
     }
 
@@ -258,9 +265,13 @@ export async function updateAvatar(formData: FormData): Promise<AvatarResult> {
       .getPublicUrl(filePath)
 
     // Update profile with new avatar URL
-    const { error: updateError } = await supabase
+    const avatarUpdateData: Database['public']['Tables']['profiles']['Update'] = {
+      avatar_url: publicUrl,
+    }
+
+    const { error: updateError } = await (supabase as any)
       .from('profiles')
-      .update({ avatar_url: publicUrl })
+      .update(avatarUpdateData)
       .eq('id', user.id)
 
     if (updateError) {

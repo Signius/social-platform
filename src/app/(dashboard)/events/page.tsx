@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatEventDate } from "@/lib/utils/format"
+import type { Database } from "@/types/database"
 
 export default async function EventsPage() {
   const supabase = await createClient()
@@ -15,11 +16,12 @@ export default async function EventsPage() {
   }
 
   // Get groups user is member of
-  const { data: userGroups } = await supabase
+  const { data: userGroupsData } = await (supabase as any)
     .from('group_members')
     .select('group_id')
     .eq('user_id', user.id)
-
+  
+  const userGroups = userGroupsData as Pick<Database['public']['Tables']['group_members']['Row'], 'group_id'>[] | null
   const groupIds = userGroups?.map(g => g.group_id) || []
 
   if (groupIds.length === 0) {
@@ -48,7 +50,7 @@ export default async function EventsPage() {
   }
 
   // Get upcoming events from user's groups
-  const { data: upcomingEvents } = await supabase
+  const { data: upcomingEventsData } = await (supabase as any)
     .from('events')
     .select(`
       *,
@@ -59,17 +61,26 @@ export default async function EventsPage() {
     .eq('status', 'upcoming')
     .gte('start_time', new Date().toISOString())
     .order('start_time', { ascending: true })
+  
+  type EventWithRelations = Database['public']['Tables']['events']['Row'] & {
+    groups: Pick<Database['public']['Tables']['groups']['Row'], 'name' | 'slug'>
+    creator: Pick<Database['public']['Tables']['profiles']['Row'], 'username' | 'full_name'>
+  }
+  
+  const upcomingEvents = upcomingEventsData as EventWithRelations[] | null
 
   // Get user's RSVPs
   const eventIds = upcomingEvents?.map(e => e.id) || []
   let userRsvps: Record<string, string> = {}
   
   if (eventIds.length > 0) {
-    const { data: rsvps } = await supabase
+    const { data: rsvpsData } = await (supabase as any)
       .from('event_attendees')
       .select('event_id, rsvp_status')
       .eq('user_id', user.id)
       .in('event_id', eventIds)
+    
+    const rsvps = rsvpsData as Pick<Database['public']['Tables']['event_attendees']['Row'], 'event_id' | 'rsvp_status'>[] | null
     
     rsvps?.forEach(rsvp => {
       userRsvps[rsvp.event_id] = rsvp.rsvp_status
@@ -79,11 +90,13 @@ export default async function EventsPage() {
   // Get attendee counts for each event
   let attendeeCounts: Record<string, number> = {}
   if (eventIds.length > 0) {
-    const { data: counts } = await supabase
+    const { data: countsData } = await (supabase as any)
       .from('event_attendees')
       .select('event_id')
       .in('event_id', eventIds)
       .eq('rsvp_status', 'going')
+    
+    const counts = countsData as Pick<Database['public']['Tables']['event_attendees']['Row'], 'event_id'>[] | null
     
     counts?.forEach(count => {
       if (!attendeeCounts[count.event_id]) {

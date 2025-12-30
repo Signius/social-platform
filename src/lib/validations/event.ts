@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-export const createEventSchema = z.object({
+const eventSchemaBase = z.object({
   title: z.string().min(3, 'Event title must be at least 3 characters').max(200),
   description: z.string().min(10, 'Description must be at least 10 characters').max(2000).optional(),
   location: z.string().min(1, 'Location is required').max(300),
@@ -12,7 +12,9 @@ export const createEventSchema = z.object({
   }),
   capacity: z.number().int().positive().optional(),
   difficultyLevel: z.enum(['beginner', 'intermediate', 'advanced', 'expert']).optional(),
-}).refine(
+})
+
+export const createEventSchema = eventSchemaBase.refine(
   (data) => {
     if (data.endTime) {
       return new Date(data.startTime) < new Date(data.endTime)
@@ -25,7 +27,7 @@ export const createEventSchema = z.object({
   }
 )
 
-export const updateEventSchema = createEventSchema.partial()
+export const updateEventSchema = eventSchemaBase.partial()
 
 export const commentSchema = z.object({
   content: z.string().min(1, 'Comment cannot be empty').max(1000),

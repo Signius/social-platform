@@ -5,11 +5,12 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { SearchFilter } from "@/components/shared/SearchFilter"
 import { GROUP_CATEGORIES } from "@/lib/utils/constants"
+import type { Database } from "@/types/database"
 
 export default async function GroupsPage({
   searchParams,
 }: {
-  searchParams: { search?: string; category?: string }
+  searchParams: Promise<{ search?: string; category?: string }>
 }) {
   const supabase = await createClient()
   
@@ -19,11 +20,12 @@ export default async function GroupsPage({
     redirect('/login')
   }
 
-  const searchQuery = searchParams.search?.toLowerCase() || ''
-  const categoryFilter = searchParams.category || 'all'
+  const params = await searchParams
+  const searchQuery = params.search?.toLowerCase() || ''
+  const categoryFilter = params.category || 'all'
 
   // Get user's groups
-  let myGroupsQuery = supabase
+  const { data: myGroupsData } = await (supabase as any)
     .from('group_members')
     .select(`
       role,
@@ -41,8 +43,12 @@ export default async function GroupsPage({
     `)
     .eq('user_id', user.id)
     .order('joined_at', { ascending: false })
-
-  const { data: myGroups } = await myGroupsQuery
+  
+  type GroupMembership = Pick<Database['public']['Tables']['group_members']['Row'], 'role' | 'joined_at'> & {
+    groups: Pick<Database['public']['Tables']['groups']['Row'], 'id' | 'name' | 'slug' | 'description' | 'category' | 'location' | 'privacy' | 'cover_image_url'>
+  }
+  
+  const myGroups = myGroupsData as GroupMembership[] | null
 
   // Get member counts for each group
   const groupIds = myGroups?.map((g: any) => g.groups.id) || []
@@ -64,7 +70,7 @@ export default async function GroupsPage({
   }
 
   // Get public groups user hasn't joined
-  let publicGroupsQuery = supabase
+  let publicGroupsQuery = (supabase as any)
     .from('groups')
     .select('*')
     .eq('privacy', 'public')
@@ -77,10 +83,12 @@ export default async function GroupsPage({
     publicGroupsQuery = publicGroupsQuery.eq('category', categoryFilter)
   }
 
-  const { data: allPublicGroups } = await publicGroupsQuery
+  const { data: allPublicGroupsData } = await publicGroupsQuery
+  
+  const allPublicGroups = allPublicGroupsData as Database['public']['Tables']['groups']['Row'][] | null
 
   // Apply search filter (client-side for simplicity)
-  let publicGroups = allPublicGroups || []
+  let publicGroups: Database['public']['Tables']['groups']['Row'][] = allPublicGroups || []
   if (searchQuery) {
     publicGroups = publicGroups.filter(group =>
       group.name.toLowerCase().includes(searchQuery) ||
@@ -89,7 +97,7 @@ export default async function GroupsPage({
   }
 
   // Filter myGroups by search
-  let filteredMyGroups = myGroups || []
+  let filteredMyGroups: GroupMembership[] = myGroups || []
   if (searchQuery) {
     filteredMyGroups = filteredMyGroups.filter((membership: any) =>
       membership.groups.name.toLowerCase().includes(searchQuery) ||

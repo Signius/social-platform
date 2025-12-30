@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createGroupSchema } from '@/lib/validations/group'
 import { slugify } from '@/lib/utils/format'
 import { ZodError } from 'zod'
+import type { Database } from '@/types/database'
 
 export async function createGroup(formData: FormData) {
   try {
@@ -17,7 +18,7 @@ export async function createGroup(formData: FormData) {
     }
 
     // Check subscription limits
-    const { data: canCreate, error: limitError } = await supabase
+    const { data: canCreate, error: limitError } = await (supabase as any)
       .rpc('check_subscription_limit', {
         p_user_id: user.id,
         p_limit_type: 'groups'
@@ -43,13 +44,19 @@ export async function createGroup(formData: FormData) {
     const validatedData = createGroupSchema.parse(rawData)
     const slug = slugify(validatedData.name)
 
-    const { data, error } = await supabase
+    const insertData: Database['public']['Tables']['groups']['Insert'] = {
+      name: validatedData.name,
+      slug,
+      description: validatedData.description || null,
+      location: validatedData.location || null,
+      category: validatedData.category || null,
+      privacy: validatedData.privacy,
+      created_by: user.id,
+    }
+
+    const { data, error } = await (supabase as any)
       .from('groups')
-      .insert({
-        ...validatedData,
-        slug,
-        created_by: user.id,
-      })
+      .insert(insertData)
       .select()
       .single()
 
@@ -69,15 +76,17 @@ export async function createGroup(formData: FormData) {
     const maxRetries = 3
     
     while (!membership && retries < maxRetries) {
-      const { data: membershipData, error: membershipError } = await supabase
+      const { data: membershipData, error: membershipError } = await (supabase as any)
         .from('group_members')
         .select('role')
         .eq('group_id', data.id)
         .eq('user_id', user.id)
         .maybeSingle()
+      
+      const typedMembership = membershipData as Pick<Database['public']['Tables']['group_members']['Row'], 'role'> | null
 
-      if (membershipData && membershipData.role === 'admin') {
-        membership = membershipData
+      if (typedMembership && typedMembership.role === 'admin') {
+        membership = typedMembership
         break
       }
 
@@ -92,13 +101,15 @@ export async function createGroup(formData: FormData) {
       // Fallback: manually add user as admin if trigger failed
       console.warn('Database trigger failed after retries, manually adding admin')
       
-      const { error: addAdminError } = await supabase
+      const insertMemberData: Database['public']['Tables']['group_members']['Insert'] = {
+        group_id: data.id,
+        user_id: user.id,
+        role: 'admin',
+      }
+
+      const { error: addAdminError } = await (supabase as any)
         .from('group_members')
-        .insert({
-          group_id: data.id,
-          user_id: user.id,
-          role: 'admin',
-        })
+        .insert(insertMemberData)
 
       if (addAdminError) {
         // Only fail if it's not a duplicate error (trigger may have succeeded between checks)
@@ -135,11 +146,13 @@ export async function joinGroup(groupId: string) {
     }
 
     // Check subscription limits for free users
-    const { data: profile } = await supabase
+    const { data: profileData } = await (supabase as any)
       .from('profiles')
       .select('subscription_tier')
       .eq('id', user.id)
       .single()
+    
+    const profile = profileData as Pick<Database['public']['Tables']['profiles']['Row'], 'subscription_tier'> | null
 
     if (profile?.subscription_tier === 'free') {
       const { count } = await supabase
@@ -152,13 +165,15 @@ export async function joinGroup(groupId: string) {
       }
     }
 
-    const { error } = await supabase
+    const insertMemberData: Database['public']['Tables']['group_members']['Insert'] = {
+      group_id: groupId,
+      user_id: user.id,
+      role: 'member',
+    }
+
+    const { error } = await (supabase as any)
       .from('group_members')
-      .insert({
-        group_id: groupId,
-        user_id: user.id,
-        role: 'member',
-      })
+      .insert(insertMemberData)
 
     if (error) {
       // Handle duplicate membership
@@ -187,11 +202,13 @@ export async function leaveGroup(groupId: string) {
     }
 
     // Check if user is the last admin
-    const { data: adminMembers } = await supabase
+    const { data: adminMembersData } = await (supabase as any)
       .from('group_members')
       .select('user_id')
       .eq('group_id', groupId)
       .eq('role', 'admin')
+    
+    const adminMembers = adminMembersData as Pick<Database['public']['Tables']['group_members']['Row'], 'user_id'>[] | null
 
     if (adminMembers && adminMembers.length === 1 && adminMembers[0].user_id === user.id) {
       const { count: totalMembers } = await supabase

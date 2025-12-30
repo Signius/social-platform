@@ -1,17 +1,18 @@
 import { createClient } from "@/lib/supabase/server"
-import { calculateMatches } from "@/lib/matching/algorithm"
+import { calculateMatches, type MatchScore } from "@/lib/matching/algorithm"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Pagination } from "@/components/shared/Pagination"
 import Link from "next/link"
 import { redirect } from "next/navigation"
+import type { Database } from "@/types/database"
 
 const ITEMS_PER_PAGE = 12
 
 export default async function DiscoverPage({
   searchParams,
 }: {
-  searchParams: { page?: string }
+  searchParams: Promise<{ page?: string }>
 }) {
   const supabase = await createClient()
   
@@ -21,14 +22,17 @@ export default async function DiscoverPage({
     redirect('/login')
   }
 
-  const currentPage = Number(searchParams.page) || 1
+  const params = await searchParams
+  const currentPage = Number(params.page) || 1
 
   // Get user's profile to check if they have interests set
-  const { data: profile } = await supabase
+  const { data: profileData } = await (supabase as any)
     .from('profiles')
     .select('*')
     .eq('id', user.id)
     .single()
+  
+  const profile = profileData as Database['public']['Tables']['profiles']['Row'] | null
 
   if (!profile?.interests || profile.interests.length === 0) {
     return (
@@ -57,7 +61,7 @@ export default async function DiscoverPage({
     )
   }
 
-  let matches = []
+  let matches: MatchScore[] = []
   try {
     // Get more matches for pagination
     matches = await calculateMatches(user.id, 100)

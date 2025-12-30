@@ -4,8 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { formatRelativeTime } from "@/lib/utils/format"
+import type { Database } from "@/types/database"
 
-export default async function GroupDetailPage({ params }: { params: { slug: string } }) {
+export default async function GroupDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const supabase = await createClient()
   
   const { data: { user } } = await supabase.auth.getUser()
@@ -14,37 +15,43 @@ export default async function GroupDetailPage({ params }: { params: { slug: stri
     redirect('/login')
   }
 
+  const { slug } = await params
+
   // Get group by slug
-  const { data: group } = await supabase
+  const { data: groupData } = await (supabase as any)
     .from('groups')
     .select('*')
-    .eq('slug', params.slug)
+    .eq('slug', slug)
     .single()
+  
+  const group = groupData as Database['public']['Tables']['groups']['Row'] | null
 
   if (!group) {
     notFound()
   }
 
   // Check if user is a member and get their role
-  const { data: membership } = await supabase
+  const { data: membershipData } = await (supabase as any)
     .from('group_members')
     .select('role')
     .eq('group_id', group.id)
     .eq('user_id', user.id)
     .single()
+  
+  const membership = membershipData as Pick<Database['public']['Tables']['group_members']['Row'], 'role'> | null
 
   const isMember = !!membership
   const isAdmin = membership?.role === 'admin'
   const isModerator = membership?.role === 'moderator' || membership?.role === 'admin'
 
   // Get group stats
-  const { data: statsData } = await supabase.rpc('get_group_stats', {
+  const { data: statsData } = await (supabase as any).rpc('get_group_stats', {
     group_id: group.id,
   })
   const stats = statsData?.[0] || null
 
   // Get members (limit to 12 for display)
-  const { data: members } = await supabase
+  const { data: members } = await (supabase as any)
     .from('group_members')
     .select('user_id, role, joined_at, profiles(*)')
     .eq('group_id', group.id)
@@ -52,7 +59,7 @@ export default async function GroupDetailPage({ params }: { params: { slug: stri
     .limit(12)
 
   // Get upcoming events
-  const { data: events } = await supabase
+  const { data: eventsData } = await (supabase as any)
     .from('events')
     .select('*, profiles(username, full_name)')
     .eq('group_id', group.id)
@@ -60,6 +67,12 @@ export default async function GroupDetailPage({ params }: { params: { slug: stri
     .gte('start_time', new Date().toISOString())
     .order('start_time', { ascending: true })
     .limit(6)
+  
+  type EventWithCreator = Database['public']['Tables']['events']['Row'] & {
+    profiles: Pick<Database['public']['Tables']['profiles']['Row'], 'username' | 'full_name'>
+  }
+  
+  const events = eventsData as EventWithCreator[] | null
 
   return (
     <div className="space-y-8">

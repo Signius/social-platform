@@ -2,29 +2,34 @@ import { notFound } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import type { Database } from "@/types/database"
 
-export default async function PublicProfilePage({ params }: { params: { username: string } }) {
+export default async function PublicProfilePage({ params }: { params: Promise<{ username: string }> }) {
   const supabase = await createClient()
   
+  const { username } = await params
+
   // Get profile by username
-  const { data: profile } = await supabase
+  const { data: profileData } = await (supabase as any)
     .from('profiles')
     .select('*')
-    .eq('username', params.username)
+    .eq('username', username)
     .single()
+  
+  const profile = profileData as Database['public']['Tables']['profiles']['Row'] | null
 
   if (!profile) {
     notFound()
   }
 
   // Get user stats
-  const { data: statsData } = await supabase.rpc('get_user_stats', {
+  const { data: statsData } = await (supabase as any).rpc('get_user_stats', {
     user_id: profile.id,
   })
   const stats = statsData?.[0] || null
 
   // Get user badges
-  const { data: badges } = await supabase
+  const { data: badges } = await (supabase as any)
     .from('user_badges')
     .select('badge_id, earned_at, badges(*)')
     .eq('user_id', profile.id)
@@ -37,11 +42,13 @@ export default async function PublicProfilePage({ params }: { params: { username
   // Check connection status
   let connectionStatus = null
   if (user && !isOwnProfile) {
-    const { data: connection } = await supabase
+    const { data: connectionData } = await (supabase as any)
       .from('connections')
       .select('*')
       .or(`and(requester_id.eq.${user.id},receiver_id.eq.${profile.id}),and(requester_id.eq.${profile.id},receiver_id.eq.${user.id})`)
       .single()
+    
+    const connection = connectionData as Database['public']['Tables']['connections']['Row'] | null
 
     if (connection) {
       connectionStatus = connection.status

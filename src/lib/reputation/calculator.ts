@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { REPUTATION_POINTS } from '@/lib/utils/constants'
+import type { Database } from '@/types/database'
 
 export type ReputationAction = keyof typeof REPUTATION_POINTS
 
@@ -10,7 +11,7 @@ export async function updateReputation(
   const supabase = await createClient()
   const points = REPUTATION_POINTS[action]
 
-  const { error } = await supabase.rpc('increment_reputation', {
+  const { error } = await (supabase as any).rpc('increment_reputation', {
     user_id: userId,
     points,
   })
@@ -28,23 +29,25 @@ async function checkBadgeEligibility(userId: string): Promise<void> {
   const supabase = await createClient()
 
   // Get user's current stats
-  const { data: stats } = await supabase.rpc('get_user_stats', {
+  const { data: stats } = await (supabase as any).rpc('get_user_stats', {
     user_id: userId,
   })
 
   if (!stats) return
 
   // Get user's current reputation
-  const { data: profile } = await supabase
+  const { data: profileData } = await (supabase as any)
     .from('profiles')
     .select('reputation_score')
     .eq('id', userId)
     .single()
+  
+  const profile = profileData as Pick<Database['public']['Tables']['profiles']['Row'], 'reputation_score'> | null
 
   if (!profile) return
 
   // Get all badges
-  const { data: badges } = await supabase.from('badges').select('*')
+  const { data: badges } = await (supabase as any).from('badges').select('*')
 
   if (!badges) return
 
@@ -72,7 +75,7 @@ async function checkBadgeEligibility(userId: string): Promise<void> {
 
     if (eligible) {
       // Check if user already has this badge
-      const { data: existingBadge } = await supabase
+      const { data: existingBadge } = await (supabase as any)
         .from('user_badges')
         .select('id')
         .eq('user_id', userId)
@@ -81,10 +84,12 @@ async function checkBadgeEligibility(userId: string): Promise<void> {
 
       if (!existingBadge) {
         // Award the badge
-        await supabase.from('user_badges').insert({
+        const insertData: Database['public']['Tables']['user_badges']['Insert'] = {
           user_id: userId,
           badge_id: badge.id,
-        })
+        }
+        
+        await (supabase as any).from('user_badges').insert(insertData)
 
         // TODO: Send notification about new badge
       }

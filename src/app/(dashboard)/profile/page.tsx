@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import type { Database } from "@/types/database"
 
 export default async function ProfilePage() {
   const supabase = await createClient()
@@ -14,24 +15,26 @@ export default async function ProfilePage() {
   }
 
   // Get user's profile
-  const { data: profile } = await supabase
+  const { data: profileData } = await (supabase as any)
     .from('profiles')
     .select('*')
     .eq('id', user.id)
     .single()
+  
+  const profile = profileData as Database['public']['Tables']['profiles']['Row'] | null
 
   if (!profile) {
     redirect('/profile/edit')
   }
 
   // Get user stats
-  const { data: statsData } = await supabase.rpc('get_user_stats', {
+  const { data: statsData } = await (supabase as any).rpc('get_user_stats', {
     user_id: user.id,
   })
   const stats = statsData?.[0] || null
 
   // Get user badges
-  const { data: badges } = await supabase
+  const { data: badges } = await (supabase as any)
     .from('user_badges')
     .select('badge_id, earned_at, badges(*)')
     .eq('user_id', user.id)

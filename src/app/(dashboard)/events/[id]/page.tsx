@@ -4,8 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 import { formatEventDate } from "@/lib/utils/format"
+import type { Database } from "@/types/database"
 
-export default async function EventDetailPage({ params }: { params: { id: string } }) {
+export default async function EventDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient()
   
   const { data: { user } } = await supabase.auth.getUser()
@@ -14,23 +15,32 @@ export default async function EventDetailPage({ params }: { params: { id: string
     redirect('/login')
   }
 
+  const { id } = await params
+
   // Get event
-  const { data: event } = await supabase
+  const { data: eventData } = await (supabase as any)
     .from('events')
     .select(`
       *,
       groups(*),
       creator:created_by(id, username, full_name, avatar_url)
     `)
-    .eq('id', params.id)
+    .eq('id', id)
     .single()
+  
+  type EventWithRelations = Database['public']['Tables']['events']['Row'] & {
+    groups: Database['public']['Tables']['groups']['Row']
+    creator: Pick<Database['public']['Tables']['profiles']['Row'], 'id' | 'username' | 'full_name' | 'avatar_url'>
+  }
+  
+  const event = eventData as EventWithRelations | null
 
   if (!event) {
     notFound()
   }
 
   // Check if user is a member of the group
-  const { data: membership } = await supabase
+  const { data: membership } = await (supabase as any)
     .from('group_members')
     .select('role')
     .eq('group_id', event.group_id)
@@ -46,21 +56,23 @@ export default async function EventDetailPage({ params }: { params: { id: string
   }
 
   // Get user's RSVP status
-  const { data: userRsvp } = await supabase
+  const { data: userRsvpData } = await (supabase as any)
     .from('event_attendees')
     .select('rsvp_status, attended, rating')
     .eq('event_id', event.id)
     .eq('user_id', user.id)
     .single()
+  
+  const userRsvp = userRsvpData as Pick<Database['public']['Tables']['event_attendees']['Row'], 'rsvp_status' | 'attended' | 'rating'> | null
 
   // Get attendees by status
-  const { data: goingAttendees } = await supabase
+  const { data: goingAttendees } = await (supabase as any)
     .from('event_attendees')
     .select('user_id, profiles(username, full_name, avatar_url)')
     .eq('event_id', event.id)
     .eq('rsvp_status', 'going')
 
-  const { data: interestedAttendees } = await supabase
+  const { data: interestedAttendees } = await (supabase as any)
     .from('event_attendees')
     .select('user_id')
     .eq('event_id', event.id)
@@ -137,7 +149,7 @@ export default async function EventDetailPage({ params }: { params: { id: string
             <div className="flex gap-2">
               <Button
                 variant={userRsvp?.rsvp_status === 'going' ? 'default' : 'outline'}
-                disabled={isFull && userRsvp?.rsvp_status !== 'going'}
+                disabled={!!(isFull && userRsvp?.rsvp_status !== 'going')}
               >
                 {userRsvp?.rsvp_status === 'going' ? '✓ Going' : 'Going'}
               </Button>
