@@ -58,7 +58,39 @@ export async function createGroup(formData: FormData) {
       if (error.code === '23505') {
         return { error: 'A group with this name already exists. Please choose a different name.' }
       }
-      return { error: error.message }
+      console.error('Error creating group:', error)
+      return { error: 'Failed to create group. Please try again.' }
+    }
+
+    // Verify the database trigger added the creator as admin
+    // Give the trigger a moment to execute
+    await new Promise(resolve => setTimeout(resolve, 100))
+    
+    const { data: membership, error: membershipError } = await supabase
+      .from('group_members')
+      .select('role')
+      .eq('group_id', data.id)
+      .eq('user_id', user.id)
+      .single()
+
+    if (membershipError || !membership || membership.role !== 'admin') {
+      // Fallback: manually add user as admin if trigger failed
+      console.warn('Database trigger may have failed, manually adding admin:', membershipError)
+      
+      const { error: addAdminError } = await supabase
+        .from('group_members')
+        .insert({
+          group_id: data.id,
+          user_id: user.id,
+          role: 'admin',
+        })
+
+      if (addAdminError) {
+        console.error('Critical: Failed to add creator as admin:', addAdminError)
+        // Delete the group since creator can't be admin
+        await supabase.from('groups').delete().eq('id', data.id)
+        return { error: 'Failed to create group properly. Please try again.' }
+      }
     }
 
     revalidatePath('/groups')

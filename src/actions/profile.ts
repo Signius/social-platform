@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/server'
 import { profileSchema } from '@/lib/validations/profile'
 import { ZodError } from 'zod'
 import { PROFILE_LIMITS, FILE_UPLOAD } from '@/lib/utils/constants'
+import { logger } from '@/lib/utils/logger'
 
 type ActionResult = {
   success?: boolean

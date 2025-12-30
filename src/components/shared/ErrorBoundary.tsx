@@ -3,15 +3,18 @@
 import { Component, ReactNode } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { logger } from '@/lib/utils/logger'
 
 interface Props {
   children: ReactNode
   fallback?: ReactNode
+  onError?: (error: Error, errorInfo: any) => void
 }
 
 interface State {
   hasError: boolean
   error?: Error
+  errorInfo?: any
 }
 
 export class ErrorBoundary extends Component<Props, State> {
@@ -25,7 +28,22 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: any) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo)
+    // Log error with structured logging
+    logger.error('React ErrorBoundary caught an error', {
+      action: 'component_error',
+      metadata: {
+        errorMessage: error.message,
+        errorStack: error.stack,
+        componentStack: errorInfo.componentStack,
+      },
+    }, error)
+
+    // Call custom error handler if provided
+    if (this.props.onError) {
+      this.props.onError(error, errorInfo)
+    }
+
+    this.setState({ errorInfo })
   }
 
   render() {
@@ -45,21 +63,40 @@ export class ErrorBoundary extends Component<Props, State> {
             </CardHeader>
             <CardContent className="space-y-4">
               {process.env.NODE_ENV === 'development' && this.state.error && (
-                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded text-sm">
-                  <p className="font-mono text-destructive">
+                <div className="p-3 bg-destructive/10 border border-destructive/20 rounded text-sm space-y-2">
+                  <p className="font-semibold text-destructive">Error:</p>
+                  <p className="font-mono text-xs text-destructive">
                     {this.state.error.message}
                   </p>
+                  {this.state.error.stack && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-xs font-semibold">
+                        Stack Trace
+                      </summary>
+                      <pre className="mt-2 text-xs overflow-auto max-h-40">
+                        {this.state.error.stack}
+                      </pre>
+                    </details>
+                  )}
                 </div>
               )}
-              <Button
-                onClick={() => {
-                  this.setState({ hasError: false, error: undefined })
-                  window.location.reload()
-                }}
-                className="w-full"
-              >
-                Try Again
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => {
+                    this.setState({ hasError: false, error: undefined, errorInfo: undefined })
+                  }}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Try Again
+                </Button>
+                <Button
+                  onClick={() => window.location.reload()}
+                  className="flex-1"
+                >
+                  Reload Page
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>
