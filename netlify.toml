@@ -9,13 +9,8 @@
 [build.environment]
   NODE_VERSION = "18"
 
-# Redirect rules for SPA-like behavior
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-  force = false
-  conditions = {Role = ["admin"]}
+# Note: @netlify/plugin-nextjs handles all routing automatically
+# No manual redirects needed for Next.js App Router
 
 # Headers for security
 [[headers]]

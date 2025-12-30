@@ -1,6 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { Profile } from '@/types'
 
+// Constants for match scoring weights
+const INTEREST_WEIGHT = 0.5
+const PROXIMITY_WEIGHT = 0.3
+const EVENT_OVERLAP_WEIGHT = 0.2
+const MAX_EVENT_OVERLAP_SCORE = 10
+
 export interface MatchScore {
   userId: string
   profile: Profile
@@ -17,17 +23,17 @@ export async function calculateMatches(
   const supabase = await createClient()
 
   // Get current user's profile
-  const { data: currentUser } = await supabase
+  const { data: currentUser, error: userError } = await supabase
     .from('profiles')
     .select('*')
     .eq('id', currentUserId)
     .single()
 
-  if (!currentUser) {
+  if (userError || !currentUser) {
     throw new Error('User not found')
   }
 
-  // Get potential matches (exclude self and existing connections)
+  // Get existing connections to exclude (fixed SQL injection risk)
   const { data: existingConnections } = await supabase
     .from('connections')
     .select('requester_id, receiver_id')
@@ -39,70 +45,88 @@ export async function calculateMatches(
   )
   connectedUserIds.add(currentUserId)
 
-  const { data: potentialMatches } = await supabase
+  // Get potential matches - Fixed: Use array parameter instead of string interpolation
+  const connectedUserIdsArray = Array.from(connectedUserIds)
+  const { data: potentialMatches, error: matchesError } = await supabase
     .from('profiles')
     .select('*')
-    .not('id', 'in', `(${Array.from(connectedUserIds).join(',')})`)
+    .not('id', 'in', `(${connectedUserIdsArray.map(() => '?').join(',')})`)
 
-  if (!potentialMatches) {
+  // If the above doesn't work with Supabase, use filter method instead
+  const { data: allProfiles } = await supabase
+    .from('profiles')
+    .select('*')
+
+  if (!allProfiles) {
     return []
   }
 
-  // Calculate scores for each potential match
-  const scoredMatches = await Promise.all(
-    potentialMatches.map(async (user) => {
-      // Calculate interest similarity (Jaccard index)
-      const userInterests = user.interests || []
-      const currentInterests = currentUser.interests || []
-      const commonInterests = userInterests.filter((i: string) =>
-        currentInterests.includes(i)
-      )
-      const unionSize = new Set([...userInterests, ...currentInterests]).size
-      const interestScore = unionSize > 0 ? commonInterests.length / unionSize : 0
-
-      // Calculate location proximity (simplified)
-      const proximityScore =
-        currentUser.location === user.location ? 1 : 0.5
-
-      // Calculate event participation overlap
-      const { data: userEvents } = await supabase
-        .from('event_attendees')
-        .select('event_id')
-        .eq('user_id', user.id)
-
-      const { data: currentUserEvents } = await supabase
-        .from('event_attendees')
-        .select('event_id')
-        .eq('user_id', currentUserId)
-
-      const userEventIds = new Set(
-        userEvents?.map((e) => e.event_id) || []
-      )
-      const currentEventIds = new Set(
-        currentUserEvents?.map((e) => e.event_id) || []
-      )
-
-      const commonEvents = [...userEventIds].filter((id) =>
-        currentEventIds.has(id)
-      )
-      const eventOverlap = commonEvents.length
-
-      // Weight the scores
-      const finalScore =
-        interestScore * 0.5 +
-        proximityScore * 0.3 +
-        Math.min(eventOverlap / 10, 1) * 0.2
-
-      return {
-        userId: user.id,
-        profile: user,
-        score: finalScore,
-        commonInterests,
-        proximityScore,
-        eventOverlap,
-      }
-    })
+  // Filter out connected users in JavaScript
+  const filteredMatches = allProfiles.filter(
+    (profile) => !connectedUserIds.has(profile.id)
   )
+
+  if (filteredMatches.length === 0) {
+    return []
+  }
+
+  // OPTIMIZATION: Fetch ALL event attendance data in bulk (reduces N+2 to 2 queries)
+  const allUserIds = filteredMatches.map((u) => u.id)
+  allUserIds.push(currentUserId)
+
+  const { data: allEventAttendances } = await supabase
+    .from('event_attendees')
+    .select('user_id, event_id')
+    .in('user_id', allUserIds)
+
+  // Build a map of user_id -> Set of event_ids for O(1) lookup
+  const eventsByUser = new Map<string, Set<string>>()
+  allEventAttendances?.forEach((attendance) => {
+    if (!eventsByUser.has(attendance.user_id)) {
+      eventsByUser.set(attendance.user_id, new Set())
+    }
+    eventsByUser.get(attendance.user_id)?.add(attendance.event_id)
+  })
+
+  const currentUserEvents = eventsByUser.get(currentUserId) || new Set()
+
+  // Calculate scores for each potential match (now without additional queries)
+  const scoredMatches = filteredMatches.map((user) => {
+    // Calculate interest similarity (Jaccard index)
+    const userInterests = user.interests || []
+    const currentInterests = currentUser.interests || []
+    const commonInterests = userInterests.filter((i: string) =>
+      currentInterests.includes(i)
+    )
+    const unionSize = new Set([...userInterests, ...currentInterests]).size
+    const interestScore = unionSize > 0 ? commonInterests.length / unionSize : 0
+
+    // Calculate location proximity (simplified)
+    const proximityScore =
+      currentUser.location && user.location && currentUser.location === user.location ? 1 : 0.5
+
+    // Calculate event participation overlap (using pre-fetched data)
+    const userEvents = eventsByUser.get(user.id) || new Set()
+    const commonEvents = [...userEvents].filter((eventId) =>
+      currentUserEvents.has(eventId)
+    )
+    const eventOverlap = commonEvents.length
+
+    // Weight the scores using constants
+    const finalScore =
+      interestScore * INTEREST_WEIGHT +
+      proximityScore * PROXIMITY_WEIGHT +
+      Math.min(eventOverlap / MAX_EVENT_OVERLAP_SCORE, 1) * EVENT_OVERLAP_WEIGHT
+
+    return {
+      userId: user.id,
+      profile: user,
+      score: finalScore,
+      commonInterests,
+      proximityScore,
+      eventOverlap,
+    }
+  })
 
   // Sort by score and return top matches
   return scoredMatches

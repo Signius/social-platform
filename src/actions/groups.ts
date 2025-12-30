@@ -4,89 +4,169 @@ import { revalidatePath } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createGroupSchema } from '@/lib/validations/group'
 import { slugify } from '@/lib/utils/format'
+import { ZodError } from 'zod'
 
 export async function createGroup(formData: FormData) {
-  const supabase = await createClient()
+  try {
+    const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
-  
-  if (!user) {
-    return { error: 'You must be logged in to create a group' }
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return { error: 'You must be logged in to create a group' }
+    }
+
+    // Check subscription limits
+    const { data: canCreate, error: limitError } = await supabase
+      .rpc('check_subscription_limit', {
+        user_id: user.id,
+        limit_type: 'groups'
+      })
+
+    if (limitError) {
+      console.error('Error checking subscription limit:', limitError)
+      return { error: 'Failed to verify subscription limits' }
+    }
+
+    if (!canCreate) {
+      return { error: 'Free tier limit reached. Upgrade to premium to create more groups.' }
+    }
+
+    const rawData = {
+      name: formData.get('name') as string,
+      description: formData.get('description') as string,
+      location: formData.get('location') as string,
+      category: formData.get('category') as string,
+      privacy: formData.get('privacy') as 'public' | 'private' | 'invite_only',
+    }
+
+    const validatedData = createGroupSchema.parse(rawData)
+    const slug = slugify(validatedData.name)
+
+    const { data, error } = await supabase
+      .from('groups')
+      .insert({
+        ...validatedData,
+        slug,
+        created_by: user.id,
+      })
+      .select()
+      .single()
+
+    if (error) {
+      // Handle unique constraint violation for slug
+      if (error.code === '23505') {
+        return { error: 'A group with this name already exists. Please choose a different name.' }
+      }
+      return { error: error.message }
+    }
+
+    revalidatePath('/groups')
+    return { data }
+  } catch (error) {
+    if (error instanceof ZodError) {
+      const firstError = error.errors[0]
+      return { error: `${firstError.path.join('.')}: ${firstError.message}` }
+    }
+    console.error('Unexpected error in createGroup:', error)
+    return { error: 'An unexpected error occurred. Please try again.' }
   }
-
-  const rawData = {
-    name: formData.get('name') as string,
-    description: formData.get('description') as string,
-    location: formData.get('location') as string,
-    category: formData.get('category') as string,
-    privacy: formData.get('privacy') as 'public' | 'private' | 'invite_only',
-  }
-
-  const validatedData = createGroupSchema.parse(rawData)
-  const slug = slugify(validatedData.name)
-
-  const { data, error } = await supabase
-    .from('groups')
-    .insert({
-      ...validatedData,
-      slug,
-      created_by: user.id,
-    })
-    .select()
-    .single()
-
-  if (error) {
-    return { error: error.message }
-  }
-
-  revalidatePath('/groups')
-  return { data }
 }
 
 export async function joinGroup(groupId: string) {
-  const supabase = await createClient()
+  try {
+    const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
-  
-  if (!user) {
-    return { error: 'You must be logged in to join a group' }
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return { error: 'You must be logged in to join a group' }
+    }
+
+    // Check subscription limits for free users
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('subscription_tier')
+      .eq('id', user.id)
+      .single()
+
+    if (profile?.subscription_tier === 'free') {
+      const { count } = await supabase
+        .from('group_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+
+      if (count && count >= 3) {
+        return { error: 'Free tier limit reached. You can only join 3 groups. Upgrade to premium for unlimited groups.' }
+      }
+    }
+
+    const { error } = await supabase
+      .from('group_members')
+      .insert({
+        group_id: groupId,
+        user_id: user.id,
+        role: 'member',
+      })
+
+    if (error) {
+      // Handle duplicate membership
+      if (error.code === '23505') {
+        return { error: 'You are already a member of this group.' }
+      }
+      return { error: error.message }
+    }
+
+    revalidatePath('/groups')
+    return { success: true }
+  } catch (error) {
+    console.error('Unexpected error in joinGroup:', error)
+    return { error: 'An unexpected error occurred. Please try again.' }
   }
-
-  const { error } = await supabase
-    .from('group_members')
-    .insert({
-      group_id: groupId,
-      user_id: user.id,
-      role: 'member',
-    })
-
-  if (error) {
-    return { error: error.message }
-  }
-
-  revalidatePath('/groups')
-  return { success: true }
 }
 
 export async function leaveGroup(groupId: string) {
-  const supabase = await createClient()
+  try {
+    const supabase = await createClient()
 
-  const { data: { user } } = await supabase.auth.getUser()
-  
-  if (!user) {
-    return { error: 'You must be logged in' }
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (!user) {
+      return { error: 'You must be logged in' }
+    }
+
+    // Check if user is the last admin
+    const { data: adminMembers } = await supabase
+      .from('group_members')
+      .select('user_id')
+      .eq('group_id', groupId)
+      .eq('role', 'admin')
+
+    if (adminMembers && adminMembers.length === 1 && adminMembers[0].user_id === user.id) {
+      const { count: totalMembers } = await supabase
+        .from('group_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('group_id', groupId)
+
+      if (totalMembers && totalMembers > 1) {
+        return { error: 'You are the only admin. Please assign another admin before leaving the group.' }
+      }
+    }
+
+    const { error } = await supabase
+      .from('group_members')
+      .delete()
+      .match({ group_id: groupId, user_id: user.id })
+
+    if (error) {
+      return { error: error.message }
+    }
+
+    revalidatePath('/groups')
+    return { success: true }
+  } catch (error) {
+    console.error('Unexpected error in leaveGroup:', error)
+    return { error: 'An unexpected error occurred. Please try again.' }
   }
-
-  const { error } = await supabase
-    .from('group_members')
-    .delete()
-    .match({ group_id: groupId, user_id: user.id })
-
-  if (error) {
-    return { error: error.message }
-  }
-
-  revalidatePath('/groups')
-  return { success: true }
 }
 
