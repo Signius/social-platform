@@ -54,7 +54,41 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  await supabase.auth.getUser()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // Protected routes that require authentication
+  const protectedRoutes = [
+    '/dashboard',
+    '/groups',
+    '/events',
+    '/connections',
+    '/profile',
+  ]
+
+  // Auth routes that should redirect to dashboard if already logged in
+  const authRoutes = ['/login', '/register']
+
+  const path = request.nextUrl.pathname
+
+  // Check if accessing a protected route
+  const isProtectedRoute = protectedRoutes.some(route => path.startsWith(route))
+  const isAuthRoute = authRoutes.some(route => path.startsWith(route))
+
+  // Redirect to login if accessing protected route without auth
+  if (isProtectedRoute && !user) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/login'
+    redirectUrl.searchParams.set('redirectTo', path)
+    return NextResponse.redirect(redirectUrl)
+  }
+
+  // Redirect to dashboard if accessing auth routes while logged in
+  if (isAuthRoute && user) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/dashboard'
+    redirectUrl.searchParams.delete('redirectTo')
+    return NextResponse.redirect(redirectUrl)
+  }
 
   return response
 }

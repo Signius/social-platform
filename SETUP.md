@@ -248,8 +248,6 @@ Don't forget to update:
 - Supabase redirect URLs to include your Netlify domain
 - PayFast URL to production (when ready)
 
-For detailed deployment instructions, see `NETLIFY_DEPLOY.md`
-
 ## Troubleshooting
 
 ### Common Issues
