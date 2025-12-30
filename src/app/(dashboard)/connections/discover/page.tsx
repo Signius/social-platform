@@ -2,10 +2,17 @@ import { createClient } from "@/lib/supabase/server"
 import { calculateMatches } from "@/lib/matching/algorithm"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Pagination } from "@/components/shared/Pagination"
 import Link from "next/link"
 import { redirect } from "next/navigation"
 
-export default async function DiscoverPage() {
+const ITEMS_PER_PAGE = 12
+
+export default async function DiscoverPage({
+  searchParams,
+}: {
+  searchParams: { page?: string }
+}) {
   const supabase = await createClient()
   
   const { data: { user } } = await supabase.auth.getUser()
@@ -13,6 +20,8 @@ export default async function DiscoverPage() {
   if (!user) {
     redirect('/login')
   }
+
+  const currentPage = Number(searchParams.page) || 1
 
   // Get user's profile to check if they have interests set
   const { data: profile } = await supabase
@@ -50,23 +59,31 @@ export default async function DiscoverPage() {
 
   let matches = []
   try {
-    matches = await calculateMatches(user.id, 20)
+    // Get more matches for pagination
+    matches = await calculateMatches(user.id, 100)
   } catch (error) {
     console.error('Error calculating matches:', error)
   }
+
+  // Pagination logic
+  const totalMatches = matches.length
+  const totalPages = Math.ceil(totalMatches / ITEMS_PER_PAGE)
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE
+  const endIndex = startIndex + ITEMS_PER_PAGE
+  const paginatedMatches = matches.slice(startIndex, endIndex)
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-4xl font-bold">Discover People</h1>
         <p className="text-muted-foreground mt-2">
-          {matches.length > 0 
-            ? `We found ${matches.length} people who share your interests`
+          {totalMatches > 0 
+            ? `We found ${totalMatches} people who share your interests`
             : "Find like-minded people based on shared interests"}
         </p>
       </div>
 
-      {matches.length === 0 ? (
+      {paginatedMatches.length === 0 && currentPage === 1 ? (
         <Card>
           <CardHeader>
             <CardTitle>No Matches Yet</CardTitle>
@@ -86,8 +103,9 @@ export default async function DiscoverPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {matches.map((match) => (
+        <>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {paginatedMatches.map((match) => (
             <Card key={match.userId}>
               <CardHeader>
                 <div className="flex items-start justify-between">
@@ -158,7 +176,12 @@ export default async function DiscoverPage() {
             </Card>
           ))}
         </div>
-      )}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+        />
+      </>
+    )}
     </div>
   )
 }

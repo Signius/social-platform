@@ -3,8 +3,14 @@ import { createClient } from "@/lib/supabase/server"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { SearchFilter } from "@/components/shared/SearchFilter"
+import { GROUP_CATEGORIES } from "@/lib/utils/constants"
 
-export default async function GroupsPage() {
+export default async function GroupsPage({
+  searchParams,
+}: {
+  searchParams: { search?: string; category?: string }
+}) {
   const supabase = await createClient()
   
   const { data: { user } } = await supabase.auth.getUser()
@@ -13,8 +19,11 @@ export default async function GroupsPage() {
     redirect('/login')
   }
 
+  const searchQuery = searchParams.search?.toLowerCase() || ''
+  const categoryFilter = searchParams.category || 'all'
+
   // Get user's groups
-  const { data: myGroups } = await supabase
+  let myGroupsQuery = supabase
     .from('group_members')
     .select(`
       role,
@@ -32,6 +41,8 @@ export default async function GroupsPage() {
     `)
     .eq('user_id', user.id)
     .order('joined_at', { ascending: false })
+
+  const { data: myGroups } = await myGroupsQuery
 
   // Get member counts for each group
   const groupIds = myGroups?.map((g: any) => g.groups.id) || []
@@ -52,14 +63,39 @@ export default async function GroupsPage() {
     })
   }
 
-  // Get public groups user hasn't joined (limited to 6)
-  const { data: publicGroups } = await supabase
+  // Get public groups user hasn't joined
+  let publicGroupsQuery = supabase
     .from('groups')
     .select('*')
     .eq('privacy', 'public')
     .not('id', 'in', groupIds.length > 0 ? `(${groupIds.join(',')})` : '(00000000-0000-0000-0000-000000000000)')
     .order('created_at', { ascending: false })
-    .limit(6)
+    .limit(12)
+
+  // Apply category filter
+  if (categoryFilter && categoryFilter !== 'all') {
+    publicGroupsQuery = publicGroupsQuery.eq('category', categoryFilter)
+  }
+
+  const { data: allPublicGroups } = await publicGroupsQuery
+
+  // Apply search filter (client-side for simplicity)
+  let publicGroups = allPublicGroups || []
+  if (searchQuery) {
+    publicGroups = publicGroups.filter(group =>
+      group.name.toLowerCase().includes(searchQuery) ||
+      group.description?.toLowerCase().includes(searchQuery)
+    )
+  }
+
+  // Filter myGroups by search
+  let filteredMyGroups = myGroups || []
+  if (searchQuery) {
+    filteredMyGroups = filteredMyGroups.filter((membership: any) =>
+      membership.groups.name.toLowerCase().includes(searchQuery) ||
+      membership.groups.description?.toLowerCase().includes(searchQuery)
+    )
+  }
 
   return (
     <div className="space-y-8">
@@ -73,12 +109,19 @@ export default async function GroupsPage() {
         </Link>
       </div>
 
+      {/* Search and Filter */}
+      <SearchFilter 
+        placeholder="Search groups by name or description..."
+        categories={GROUP_CATEGORIES as unknown as string[]}
+        showCategoryFilter={true}
+      />
+
       {/* My Groups */}
-      {myGroups && myGroups.length > 0 && (
+      {filteredMyGroups && filteredMyGroups.length > 0 && (
         <div className="space-y-4">
-          <h2 className="text-2xl font-bold">My Groups ({myGroups.length})</h2>
+          <h2 className="text-2xl font-bold">My Groups ({filteredMyGroups.length})</h2>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {myGroups.map((membership: any) => {
+            {filteredMyGroups.map((membership: any) => {
               const group = membership.groups
               const stats = groupStats[group.id] || { memberCount: 0 }
               
@@ -176,7 +219,7 @@ export default async function GroupsPage() {
       )}
 
       {/* Empty State */}
-      {(!myGroups || myGroups.length === 0) && (!publicGroups || publicGroups.length === 0) && (
+      {(!filteredMyGroups || filteredMyGroups.length === 0) && (!publicGroups || publicGroups.length === 0) && (
         <Card>
           <CardHeader>
             <CardTitle>No Groups Yet</CardTitle>

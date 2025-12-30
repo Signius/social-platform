@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/hooks/useAuth"
 import { signOut } from "@/actions/auth"
+import { MobileNav } from "./MobileNav"
 
 export function Header() {
   const { user, loading } = useAuth()
@@ -20,7 +21,7 @@ export function Header() {
   }
 
   return (
-    <header className="border-b">
+    <header className="border-b sticky top-0 bg-background z-30">
       <div className="container mx-auto px-4 py-4 flex items-center justify-between">
         <Link href="/" className="text-2xl font-bold text-primary">
           EventConnect
@@ -48,21 +49,23 @@ export function Header() {
             <div className="h-9 w-24 bg-muted animate-pulse rounded" />
           ) : user ? (
             <>
-              <Link href="/profile/edit">
+              <Link href="/profile/edit" className="hidden md:block">
                 <Button variant="ghost">Profile</Button>
               </Link>
-              <Button variant="outline" onClick={handleSignOut}>
+              <Button variant="outline" onClick={handleSignOut} className="hidden md:flex">
                 Logout
               </Button>
+              <MobileNav isAuthenticated={true} />
             </>
           ) : (
             <>
-              <Link href="/login">
+              <Link href="/login" className="hidden md:block">
                 <Button variant="ghost">Login</Button>
               </Link>
-              <Link href="/register">
+              <Link href="/register" className="hidden md:block">
                 <Button>Sign Up</Button>
               </Link>
+              <MobileNav isAuthenticated={false} />
             </>
           )}
         </div>
