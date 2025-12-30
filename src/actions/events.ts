@@ -30,8 +30,8 @@ export async function createEvent(groupId: string, formData: FormData) {
     // Check subscription limits
     const { data: canCreate, error: limitError } = await supabase
       .rpc('check_subscription_limit', {
-        user_id: user.id,
-        limit_type: 'events'
+        p_user_id: user.id,
+        p_limit_type: 'events'
       })
 
     if (limitError) {

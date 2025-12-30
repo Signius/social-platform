@@ -14,9 +14,11 @@ export function Header() {
   async function handleSignOut() {
     try {
       await signOut()
-      router.push('/login')
+      // signOut action already handles redirect, no need to push
     } catch (error) {
       console.error('Error signing out:', error)
+      // Fallback redirect in case of error
+      router.push('/login')
     }
   }
 

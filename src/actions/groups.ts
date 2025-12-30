@@ -19,8 +19,8 @@ export async function createGroup(formData: FormData) {
     // Check subscription limits
     const { data: canCreate, error: limitError } = await supabase
       .rpc('check_subscription_limit', {
-        user_id: user.id,
-        limit_type: 'groups'
+        p_user_id: user.id,
+        p_limit_type: 'groups'
       })
 
     if (limitError) {
@@ -63,19 +63,34 @@ export async function createGroup(formData: FormData) {
     }
 
     // Verify the database trigger added the creator as admin
-    // Give the trigger a moment to execute
-    await new Promise(resolve => setTimeout(resolve, 100))
+    // The trigger should execute immediately, but we'll verify with retries
+    let membership = null
+    let retries = 0
+    const maxRetries = 3
     
-    const { data: membership, error: membershipError } = await supabase
-      .from('group_members')
-      .select('role')
-      .eq('group_id', data.id)
-      .eq('user_id', user.id)
-      .single()
+    while (!membership && retries < maxRetries) {
+      const { data: membershipData, error: membershipError } = await supabase
+        .from('group_members')
+        .select('role')
+        .eq('group_id', data.id)
+        .eq('user_id', user.id)
+        .maybeSingle()
 
-    if (membershipError || !membership || membership.role !== 'admin') {
+      if (membershipData && membershipData.role === 'admin') {
+        membership = membershipData
+        break
+      }
+
+      retries++
+      if (retries < maxRetries) {
+        // Wait a bit before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, 50 * retries))
+      }
+    }
+
+    if (!membership || membership.role !== 'admin') {
       // Fallback: manually add user as admin if trigger failed
-      console.warn('Database trigger may have failed, manually adding admin:', membershipError)
+      console.warn('Database trigger failed after retries, manually adding admin')
       
       const { error: addAdminError } = await supabase
         .from('group_members')
@@ -86,10 +101,14 @@ export async function createGroup(formData: FormData) {
         })
 
       if (addAdminError) {
-        console.error('Critical: Failed to add creator as admin:', addAdminError)
-        // Delete the group since creator can't be admin
-        await supabase.from('groups').delete().eq('id', data.id)
-        return { error: 'Failed to create group properly. Please try again.' }
+        // Only fail if it's not a duplicate error (trigger may have succeeded between checks)
+        if (addAdminError.code !== '23505') {
+          console.error('Critical: Failed to add creator as admin:', addAdminError)
+          // Delete the group since creator can't be admin
+          await supabase.from('groups').delete().eq('id', data.id)
+          return { error: 'Failed to create group properly. Please try again.' }
+        }
+        // If duplicate error, trigger worked, so we're good
       }
     }
 

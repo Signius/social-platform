@@ -20,8 +20,8 @@ const nextConfig = {
       ],
     },
   },
-  // Netlify-specific configuration
-  output: process.env.NETLIFY === 'true' ? 'standalone' : undefined,
+  // Netlify deployment configuration
+  ...(process.env.NETLIFY === 'true' && { output: 'standalone' }),
 }
 
 module.exports = nextConfig

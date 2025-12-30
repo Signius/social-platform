@@ -33,19 +33,13 @@ export function Footer() {
             <h4 className="font-semibold mb-4">Support</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
-                <a href="/help" className="hover:text-primary">
-                  Help Center
-                </a>
+                <span className="text-muted-foreground/60">Help Center (Coming Soon)</span>
               </li>
               <li>
-                <a href="/contact" className="hover:text-primary">
-                  Contact Us
-                </a>
+                <span className="text-muted-foreground/60">Contact Us (Coming Soon)</span>
               </li>
               <li>
-                <a href="/faq" className="hover:text-primary">
-                  FAQ
-                </a>
+                <span className="text-muted-foreground/60">FAQ (Coming Soon)</span>
               </li>
             </ul>
           </div>
@@ -53,14 +47,10 @@ export function Footer() {
             <h4 className="font-semibold mb-4">Legal</h4>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>
-                <a href="/privacy" className="hover:text-primary">
-                  Privacy Policy
-                </a>
+                <span className="text-muted-foreground/60">Privacy Policy (Coming Soon)</span>
               </li>
               <li>
-                <a href="/terms" className="hover:text-primary">
-                  Terms of Service
-                </a>
+                <span className="text-muted-foreground/60">Terms of Service (Coming Soon)</span>
               </li>
             </ul>
           </div>
