@@ -97,11 +97,14 @@ CREATE POLICY "Group admins and members can remove themselves"
   );
 
 -- Events Policies
-CREATE POLICY "Events are viewable by group members"
+CREATE POLICY "Events are viewable by group members or from public groups"
   ON events FOR SELECT
   USING (
     group_id IN (
       SELECT group_id FROM group_members WHERE user_id = auth.uid()
+    ) OR
+    group_id IN (
+      SELECT id FROM groups WHERE privacy = 'public'
     )
   );
 
@@ -134,12 +137,17 @@ CREATE POLICY "Event creators and group admins can delete events"
   );
 
 -- Event Attendees Policies
-CREATE POLICY "Event attendees are viewable by group members"
+CREATE POLICY "Event attendees are viewable by group members or for public groups"
   ON event_attendees FOR SELECT
   USING (
     event_id IN (
       SELECT id FROM events WHERE group_id IN (
         SELECT group_id FROM group_members WHERE user_id = auth.uid()
+      )
+    ) OR
+    event_id IN (
+      SELECT id FROM events WHERE group_id IN (
+        SELECT id FROM groups WHERE privacy = 'public'
       )
     )
   );
@@ -164,12 +172,17 @@ CREATE POLICY "Users can delete their own RSVP"
   USING (user_id = auth.uid());
 
 -- Comments Policies
-CREATE POLICY "Comments are viewable by group members"
+CREATE POLICY "Comments are viewable by group members or for public groups"
   ON comments FOR SELECT
   USING (
     event_id IN (
       SELECT id FROM events WHERE group_id IN (
         SELECT group_id FROM group_members WHERE user_id = auth.uid()
+      )
+    ) OR
+    event_id IN (
+      SELECT id FROM events WHERE group_id IN (
+        SELECT id FROM groups WHERE privacy = 'public'
       )
     )
   );

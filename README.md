@@ -57,6 +57,7 @@ Open [http://localhost:3000](http://localhost:3000) 🎉
    - `20240101000000_initial_schema.sql`
    - `20240102000000_add_rls_policies.sql`
    - `20240103000000_add_functions.sql`
+   - `20240104000000_add_storage_buckets.sql`
    - `seed.sql` (optional - adds sample badges)
 
 ---

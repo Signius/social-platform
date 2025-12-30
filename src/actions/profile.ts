@@ -166,7 +166,7 @@ export async function getProfileByUsername(username: string): Promise<ProfileRes
 
     // Get user stats
     const { data: stats, error: statsError } = await supabase.rpc('get_user_stats', {
-      user_id: data.id,
+      p_user_id: data.id,
     })
 
     if (statsError) {

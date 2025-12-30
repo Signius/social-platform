@@ -56,7 +56,8 @@ You have two options to set up your database:
 4. Click "Run"
 5. Repeat for `20240102000000_add_rls_policies.sql`
 6. Repeat for `20240103000000_add_functions.sql`
-7. Optionally, run `supabase/seed.sql` to add sample badges
+7. Repeat for `20240104000000_add_storage_buckets.sql`
+8. Optionally, run `supabase/seed.sql` to add sample badges
 
 #### Option B: Using Supabase CLI
 
@@ -140,28 +141,20 @@ Customize the email templates for:
 - Password reset email
 - Magic link email
 
-## Step 5: Set Up Storage (Optional)
+## Step 5: Set Up Storage
 
-For image uploads (profile pictures, group covers):
+Storage buckets and policies are now automatically created via the migration file `20240104000000_add_storage_buckets.sql`.
 
-1. In Supabase dashboard, go to "Storage"
-2. Create a new bucket called `avatars`
-3. Create another bucket called `group-covers`
-4. Set appropriate policies:
+This migration creates:
 
-```sql
--- Allow authenticated users to upload their own avatar
-CREATE POLICY "Users can upload their own avatar"
-ON storage.objects FOR INSERT
-TO authenticated
-WITH CHECK (bucket_id = 'avatars' AND auth.uid()::text = (storage.foldername(name))[1]);
+- `avatars` bucket (5MB limit) - for user profile pictures
+- `group-covers` bucket (10MB limit) - for group cover images
 
--- Allow public read access to avatars
-CREATE POLICY "Avatars are publicly accessible"
-ON storage.objects FOR SELECT
-TO public
-USING (bucket_id = 'avatars');
-```
+Both buckets have appropriate RLS policies to ensure:
+
+- Users can only upload/update/delete their own avatars
+- Group admins can only manage their group's cover images
+- Public read access for all images
 
 ## Step 6: Run the Development Server
 

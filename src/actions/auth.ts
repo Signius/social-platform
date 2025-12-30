@@ -78,13 +78,7 @@ export async function register(formData: FormData): Promise<AuthResult | never> 
       return { error: 'Username is already taken. Please choose a different username.' }
     }
 
-    // Check if email already exists
-    const { data: existingEmail } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', validatedData.email)
-      .maybeSingle()
-
+    // Supabase Auth handles email uniqueness, so we don't need to check it separately
     const { data, error } = await supabase.auth.signUp({
       email: validatedData.email,
       password: validatedData.password,

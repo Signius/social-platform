@@ -392,7 +392,42 @@ export interface Database {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_user_stats: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: {
+          hosted_events: number
+          attended_events: number
+          groups_count: number
+          connections_count: number
+          avg_rating: number | null
+        }[]
+      }
+      get_group_stats: {
+        Args: {
+          p_group_id: string
+        }
+        Returns: {
+          members_count: number
+          events_count: number
+          upcoming_events: number
+        }[]
+      }
+      increment_reputation: {
+        Args: {
+          p_user_id: string
+          p_points: number
+        }
+        Returns: void
+      }
+      check_subscription_limit: {
+        Args: {
+          p_user_id: string
+          p_limit_type: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

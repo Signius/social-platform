@@ -52,12 +52,12 @@ export default function ResetPasswordPage() {
         <CardHeader>
           <CardTitle>Check Your Email</CardTitle>
           <CardDescription>
-            We've sent a password reset link to your email address
+            We&apos;ve sent a password reset link to your email address
           </CardDescription>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground">
-            Click the link in the email to reset your password. If you don't see it, check your spam folder.
+            Click the link in the email to reset your password. If you don&apos;t see it, check your spam folder.
           </p>
         </CardContent>
         <CardFooter>
