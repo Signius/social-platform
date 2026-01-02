@@ -37,6 +37,15 @@ export default function LoginPage() {
         router.push("/dashboard")
       }
     } catch (error) {
+      // Don't show error for redirect - it's expected behavior in Next.js
+      if (error && typeof error === 'object') {
+        const errorObj = error as any
+        if ((errorObj.digest && typeof errorObj.digest === 'string' && errorObj.digest.startsWith('NEXT_REDIRECT')) ||
+            (errorObj.message && typeof errorObj.message === 'string' && errorObj.message === 'NEXT_REDIRECT')) {
+          // Redirect is happening, don't show error
+          return
+        }
+      }
       toast({
         variant: "destructive",
         title: "Error",

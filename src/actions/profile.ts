@@ -68,26 +68,57 @@ export async function updateProfile(formData: FormData): Promise<ActionResult> {
       return { error: `You can only have up to ${PROFILE_LIMITS.MAX_INTERESTS} interests` }
     }
 
-    const updateData: Database['public']['Tables']['profiles']['Update'] = {
-      username: validatedData.username,
-      full_name: sanitizedFullName,
-      bio: sanitizedBio,
-      location: sanitizedLocation,
-      interests: validatedData.interests || [],
-    }
-
-    const { error } = await (supabase as any)
+    // Check if profile exists
+    const { data: existingProfile } = await supabase
       .from('profiles')
-      .update(updateData)
+      .select('id')
       .eq('id', user.id)
+      .maybeSingle()
 
-    if (error) {
-      // Handle unique constraint violation
-      if (error.code === '23505') {
-        return { error: 'Username is already taken. Please choose a different username.' }
+    if (!existingProfile) {
+      // Profile doesn't exist, create it
+      const { error: insertError } = await supabase
+        .from('profiles')
+        .insert({
+          id: user.id,
+          username: validatedData.username,
+          full_name: sanitizedFullName,
+          bio: sanitizedBio,
+          location: sanitizedLocation,
+          interests: validatedData.interests || [],
+        })
+
+      if (insertError) {
+        // Handle unique constraint violation
+        if (insertError.code === '23505') {
+          return { error: 'Username is already taken. Please choose a different username.' }
+        }
+        console.error('Error creating profile:', insertError)
+        return { error: 'Failed to create profile' }
       }
-      console.error('Error updating profile:', error)
-      return { error: 'Failed to update profile' }
+    } else {
+      // Profile exists, update it
+      const updateData: Database['public']['Tables']['profiles']['Update'] = {
+        username: validatedData.username,
+        full_name: sanitizedFullName,
+        bio: sanitizedBio,
+        location: sanitizedLocation,
+        interests: validatedData.interests || [],
+      }
+
+      const { error: updateError } = await (supabase as any)
+        .from('profiles')
+        .update(updateData)
+        .eq('id', user.id)
+
+      if (updateError) {
+        // Handle unique constraint violation
+        if (updateError.code === '23505') {
+          return { error: 'Username is already taken. Please choose a different username.' }
+        }
+        console.error('Error updating profile:', updateError)
+        return { error: 'Failed to update profile' }
+      }
     }
 
     revalidatePath('/profile')
@@ -130,9 +161,75 @@ export async function getProfile(userId?: string): Promise<ProfileResult> {
       .from('profiles')
       .select('*')
       .eq('id', userId)
-      .single()
+      .maybeSingle()
 
-    if (error) {
+    // If profile doesn't exist, try to create it
+    if (error || !data) {
+      // Check if it's a "not found" error (PGRST116) or no data
+      if (error?.code === 'PGRST116' || !data) {
+        // Get user info to create profile
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          return { error: 'Not authenticated' }
+        }
+
+        // Create a default profile
+        // Generate a valid username (only letters, numbers, underscores)
+        let defaultUsername = user.user_metadata?.username || 
+                             user.email?.split('@')[0] || 
+                             `user_${user.id.slice(0, 8)}`
+        
+        // Sanitize username to only allow alphanumeric and underscores
+        defaultUsername = defaultUsername.toLowerCase().replace(/[^a-z0-9_]/g, '_')
+        
+        // Ensure username meets minimum length requirement
+        if (defaultUsername.length < 3) {
+          defaultUsername = `user_${user.id.slice(0, 8)}`
+        }
+        
+        // Try to create profile, if username conflict, try with suffix
+        let attempts = 0
+        let finalUsername = defaultUsername
+        let newProfile = null
+        let createError = null
+        
+        while (attempts < 5) {
+          const { data, error } = await supabase
+            .from('profiles')
+            .insert({
+              id: user.id,
+              username: finalUsername,
+              full_name: user.user_metadata?.full_name || '',
+            })
+            .select()
+            .single()
+          
+          if (!error) {
+            newProfile = data
+            break
+          }
+          
+          // If username conflict, try with a suffix
+          if (error.code === '23505') {
+            attempts++
+            finalUsername = `${defaultUsername}_${attempts}`
+            createError = error
+          } else {
+            createError = error
+            break
+          }
+        }
+        
+        if (createError && !newProfile) {
+          console.error('Error creating profile:', createError)
+          // If creation fails after retries, return error but don't treat as auth failure
+          // User can create profile through the form
+          return { error: 'Profile not found. Please complete your profile below.' }
+        }
+
+        return { data: newProfile }
+      }
+
       console.error('Error fetching profile:', error)
       return { error: 'Profile not found' }
     }

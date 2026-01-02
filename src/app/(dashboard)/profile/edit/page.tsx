@@ -22,12 +22,25 @@ export default function EditProfilePage() {
     async function loadProfile() {
       const result = await getProfile()
       if (result.error) {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: result.error,
-        })
-        router.push('/login')
+        // Only redirect to login if it's an authentication error
+        if (result.error === 'Not authenticated') {
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "You must be logged in to edit your profile",
+          })
+          router.push('/login')
+        } else {
+          // For other errors (like profile not found), show info message
+          // The form will work because updateProfile can create the profile
+          toast({
+            variant: "default",
+            title: "Create Your Profile",
+            description: "Please fill in your profile information below.",
+          })
+          // Set profile to null - form will use empty defaults via optional chaining
+          setProfile(null)
+        }
       } else if (result.data) {
         setProfile(result.data)
       }
@@ -86,9 +99,7 @@ export default function EditProfilePage() {
     )
   }
 
-  if (!profile) {
-    return null
-  }
+  // Allow form to render even if profile is null (for new profiles)
 
   return (
     <div className="max-w-2xl mx-auto space-y-8">
@@ -113,7 +124,7 @@ export default function EditProfilePage() {
               <Input
                 id="username"
                 name="username"
-                defaultValue={profile.username}
+                defaultValue={profile?.username || ''}
                 placeholder="johndoe"
                 required
                 minLength={3}
@@ -132,7 +143,7 @@ export default function EditProfilePage() {
               <Input
                 id="fullName"
                 name="fullName"
-                defaultValue={profile.full_name || ''}
+                defaultValue={profile?.full_name || ''}
                 placeholder="John Doe"
                 minLength={2}
                 disabled={loading}
@@ -144,7 +155,7 @@ export default function EditProfilePage() {
               <textarea
                 id="bio"
                 name="bio"
-                defaultValue={profile.bio || ''}
+                defaultValue={profile?.bio || ''}
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 min-h-[100px]"
                 placeholder="Tell others about yourself..."
                 maxLength={500}
@@ -160,7 +171,7 @@ export default function EditProfilePage() {
               <Input
                 id="location"
                 name="location"
-                defaultValue={profile.location || ''}
+                defaultValue={profile?.location || ''}
                 placeholder="e.g. Cape Town, South Africa"
                 maxLength={100}
                 disabled={loading}
@@ -172,7 +183,7 @@ export default function EditProfilePage() {
               <Input
                 id="interests"
                 name="interests"
-                defaultValue={profile.interests?.join(', ') || ''}
+                defaultValue={profile?.interests?.join(', ') || ''}
                 placeholder="e.g. hiking, photography, technology"
                 disabled={loading}
               />

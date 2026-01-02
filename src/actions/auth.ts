@@ -7,9 +7,22 @@ import { loginSchema, registerSchema, resetPasswordSchema } from '@/lib/validati
 import { ZodError } from 'zod'
 import type { AuthResult } from '@/types/actions'
 
+// Helper to check if an error is a Next.js redirect error
+function isRedirectError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const errorObj = error as any
+  return (
+    (errorObj.digest && typeof errorObj.digest === 'string' && errorObj.digest.startsWith('NEXT_REDIRECT')) ||
+    (errorObj.message && typeof errorObj.message === 'string' && errorObj.message === 'NEXT_REDIRECT')
+  )
+}
+
 export async function login(formData: FormData): Promise<AuthResult | never> {
+  let supabase
+  let validatedData
+
   try {
-    const supabase = await createClient()
+    supabase = await createClient()
 
     const rawData = {
       email: formData.get('email') as string,
@@ -17,8 +30,25 @@ export async function login(formData: FormData): Promise<AuthResult | never> {
     }
 
     // Validate input
-    const validatedData = loginSchema.parse(rawData)
+    try {
+      validatedData = loginSchema.parse(rawData)
+    } catch (error) {
+      if (error instanceof ZodError) {
+        const firstError = error.errors[0]
+        return { error: `${firstError.path.join('.')}: ${firstError.message}` }
+      }
+      throw error
+    }
+  } catch (error) {
+    if (error instanceof ZodError) {
+      const firstError = error.errors[0]
+      return { error: `${firstError.path.join('.')}: ${firstError.message}` }
+    }
+    console.error('Unexpected error in login (setup):', error)
+    return { error: 'An unexpected error occurred. Please try again.' }
+  }
 
+  try {
     const { data, error } = await supabase.auth.signInWithPassword(validatedData)
 
     if (error) {
@@ -40,14 +70,21 @@ export async function login(formData: FormData): Promise<AuthResult | never> {
       return { error: 'Authentication failed. Please try again.' }
     }
 
-    revalidatePath('/', 'layout')
+    try {
+      revalidatePath('/', 'layout')
+    } catch (revalidateError) {
+      // Log but don't fail on revalidatePath errors
+      console.error('Error revalidating path:', revalidateError)
+    }
+    
+    // Redirect outside try-catch so it can propagate naturally
     redirect('/dashboard')
   } catch (error) {
-    if (error instanceof ZodError) {
-      const firstError = error.errors[0]
-      return { error: `${firstError.path.join('.')}: ${firstError.message}` }
+    // Re-throw redirect errors - they're expected in Next.js
+    if (isRedirectError(error)) {
+      throw error
     }
-    console.error('Unexpected error in login:', error)
+    console.error('Unexpected error in login (auth):', error)
     return { error: 'An unexpected error occurred. Please try again.' }
   }
 }
@@ -119,6 +156,10 @@ export async function register(formData: FormData): Promise<AuthResult | never> 
     revalidatePath('/', 'layout')
     redirect('/dashboard')
   } catch (error) {
+    // Re-throw redirect errors - they're expected in Next.js
+    if (isRedirectError(error)) {
+      throw error
+    }
     if (error instanceof ZodError) {
       const firstError = error.errors[0]
       return { error: `${firstError.path.join('.')}: ${firstError.message}` }
@@ -140,6 +181,10 @@ export async function signOut(): Promise<never> {
     revalidatePath('/', 'layout')
     redirect('/login')
   } catch (error) {
+    // Re-throw redirect errors - they're expected in Next.js
+    if (isRedirectError(error)) {
+      throw error
+    }
     console.error('Unexpected error in signOut:', error)
     // Still redirect even if sign out fails
     redirect('/login')
